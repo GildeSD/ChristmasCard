@@ -3,6 +3,7 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using System.Runtime.InteropServices;
+using OpenTK.Windowing.Common.Input;
 
 namespace ComputeTriangle
 {
@@ -31,7 +32,7 @@ namespace ComputeTriangle
         private Matrix4 _worldMatrix;
         private Matrix4 _viewMatrix;
         private Matrix4 _projectionMatrix;
-        private float _zoom = 1.0f;
+        private float _zoom = 0.4f;
         private const int MAX_PARTICLES = 50;
 
         // Firework properties
@@ -172,7 +173,7 @@ namespace ComputeTriangle
             : base(gameWindowSettings, nativeWindowSettings)
         {
             _worldMatrix = Matrix4.Identity;
-            _viewMatrix = Matrix4.Identity;
+            _viewMatrix = Matrix4.CreateScale(_zoom);
             _projectionMatrix = Matrix4.Identity;
 
             // Initialize firework position at bottom center
@@ -220,7 +221,6 @@ namespace ComputeTriangle
                 _particles.ToArray(),
                 BufferUsageHint.DynamicDraw);
         }
-
 
         protected override void OnMouseWheel(MouseWheelEventArgs e)
         {
@@ -452,12 +452,24 @@ namespace ComputeTriangle
     {
         public static void Main()
         {
+            // Get the primary monitor
+            var monitor = Monitors.GetPrimaryMonitor();
+
+            // Calculate 50% of the screen dimensions
+            int width = (int)(monitor.HorizontalResolution * 0.5f);
+            int height = (int)(monitor.VerticalResolution * 0.5f);
+
+            // Calculate center position
+            int x = (monitor.HorizontalResolution - width) / 2;
+            int y = (monitor.VerticalResolution - height) / 2;
+
             var nativeWindowSettings = new NativeWindowSettings()
             {
-                ClientSize = new Vector2i(800, 800),
+                ClientSize = new Vector2i(width, height),
                 Title = "Kerstkaart 2024 - Harm Cox",
                 Flags = ContextFlags.ForwardCompatible,
-                APIVersion = new Version(4, 3)
+                APIVersion = new Version(4, 3),
+                Location = new Vector2i(x, y)
             };
 
             using (var game = new Game(GameWindowSettings.Default, nativeWindowSettings))
