@@ -12,6 +12,15 @@ namespace ComputeTriangle
         public Vector2 Position;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    struct Particle
+    {
+        public Vector2 Position;
+        public Vector2 Velocity;
+        public float Life;
+        public float Size;
+    }
+
     public class Game : GameWindow
     {
         private int _computeProgram;
@@ -19,11 +28,21 @@ namespace ComputeTriangle
         private int _vertexBuffer;
         private int _vertexArrayObject;
         private int _transformUBO;
-        private Matrix4[] _worldMatrices;
+        private Matrix4 _worldMatrix;
         private Matrix4 _viewMatrix;
         private Matrix4 _projectionMatrix;
         private float _zoom = 1.0f;
         private const int MAX_INSTANCES = 10;
+
+        // Firework properties
+        private Vector2 _position;
+        private Vector2 _velocity;
+        private const float GRAVITY = -2.0f;
+        private const float INITIAL_VELOCITY = 3.0f;
+        private bool _isLaunched = false;
+        private bool _hasExploded = false;
+        private List<Particle> _particles = new List<Particle>();
+        private Random _random = new Random();
 
         private readonly string _computeShaderSource = @"
             #version 430
@@ -42,7 +61,7 @@ namespace ComputeTriangle
                 uint id = gl_GlobalInvocationID.x;
                 if (id >= 3) return;
 
-                float size = 0.5;
+                float size = 0.1; // Smaller triangle
                 float height = size * sqrt(3.0);
 
                 vec2 position;
@@ -69,15 +88,13 @@ namespace ComputeTriangle
             layout(std140, binding = 1) uniform TransformUBO {
                 mat4 projectionMatrix;
                 mat4 viewMatrix;
-                mat4 worldMatrices[10]; // Match MAX_INSTANCES
+                mat4 worldMatrix;
             };
             
             out vec2 FragPos;
-            flat out int instanceID;
             
             void main() {
-                instanceID = gl_InstanceID;
-                vec4 worldPosition = worldMatrices[gl_InstanceID] * vec4(aPosition, 0.0, 1.0);
+                vec4 worldPosition = worldMatrix * vec4(aPosition, 0.0, 1.0);
                 vec4 viewPosition = viewMatrix * worldPosition;
                 vec4 clipPosition = projectionMatrix * viewPosition;
                 FragPos = aPosition;
@@ -90,25 +107,17 @@ namespace ComputeTriangle
             out vec4 FragColor;
             
             in vec2 FragPos;
-            flat in int instanceID;
 
             void main() {
-                float size = 0.5;
+                float size = 0.1;
                 float height = size * sqrt(3.0);
                 vec2 center = vec2(0.0, -height/6.0);
                 float radius = size / sqrt(3.0);
                 
                 if (length(FragPos - center) <= radius) {
-                    // Create different colors based on instanceID
-                    vec3 colors[3] = vec3[](
-                        vec3(1.0, 0.0, 0.0), // Red
-                        vec3(0.0, 1.0, 0.0), // Green
-                        vec3(0.0, 0.0, 1.0)  // Blue
-                    );
-                    vec3 color = colors[instanceID % 3];
-                    FragColor = vec4(color, 1.0);
+                    FragColor = vec4(1.0, 0.5, 0.0, 1.0); // Orange color for the firework
                 } else {
-                    FragColor = vec4(0.2, 0.2, 0.2, 1.0);
+                    discard;
                 }
             }
         ";
@@ -116,21 +125,14 @@ namespace ComputeTriangle
         public Game(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
             : base(gameWindowSettings, nativeWindowSettings)
         {
-            _worldMatrices = new Matrix4[MAX_INSTANCES];
+            _worldMatrix = Matrix4.Identity;
             _viewMatrix = Matrix4.Identity;
             _projectionMatrix = Matrix4.Identity;
-            InitializeWorldMatrices();
-        }
 
-        private void InitializeWorldMatrices()
-        {
-            // Initialize matrices for different positions
-            for (int i = 0; i < MAX_INSTANCES; i++)
-            {
-                float x = (i % 3) * 1.5f - 1.5f; // Arrange in a grid
-                float y = (i / 3) * 1.5f - 0.75f;
-                _worldMatrices[i] = Matrix4.CreateTranslation(x, y, 0);
-            }
+            // Initialize firework position at bottom center
+            _position = new Vector2(0.0f, -0.9f);
+            _velocity = new Vector2(0.0f, INITIAL_VELOCITY);
+            _isLaunched = true;
         }
 
         protected override void OnMouseWheel(MouseWheelEventArgs e)
@@ -152,6 +154,27 @@ namespace ComputeTriangle
             _projectionMatrix = Matrix4.CreateOrthographic(2f * aspectRatio, 2f, -1f, 1f);
         }
 
+        protected override void OnUpdateFrame(FrameEventArgs args)
+        {
+            base.OnUpdateFrame(args);
+
+            if (_isLaunched)
+            {
+                // Update velocity and position
+                _velocity.Y += GRAVITY * (float)args.Time;
+                _position += _velocity * (float)args.Time;
+
+                // Reset if the firework goes off screen
+                if (_position.Y < -1.0f)
+                {
+                    _position = new Vector2(0.0f, -0.9f);
+                    _velocity = new Vector2(0.0f, INITIAL_VELOCITY);
+                }
+
+                _worldMatrix = Matrix4.CreateTranslation(new Vector3(_position.X, _position.Y, 0));
+            }
+        }
+
         protected override void OnResize(ResizeEventArgs e)
         {
             base.OnResize(e);
@@ -163,7 +186,7 @@ namespace ComputeTriangle
         {
             base.OnLoad();
 
-            GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+            GL.ClearColor(0.0f, 0.0f, 0.1f, 1.0f);
             UpdateProjectionMatrix();
 
             // Create compute shader
@@ -184,7 +207,7 @@ namespace ComputeTriangle
             // Create and initialize transform UBO
             _transformUBO = GL.GenBuffer();
             GL.BindBuffer(BufferTarget.UniformBuffer, _transformUBO);
-            GL.BufferData(BufferTarget.UniformBuffer, (2 + MAX_INSTANCES) * sizeof(float) * 16, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+            GL.BufferData(BufferTarget.UniformBuffer, 3 * sizeof(float) * 16, IntPtr.Zero, BufferUsageHint.DynamicDraw);
             GL.BindBufferBase(BufferRangeTarget.UniformBuffer, 1, _transformUBO);
 
             // Set up VAO
@@ -212,10 +235,10 @@ namespace ComputeTriangle
             GL.BindBuffer(BufferTarget.UniformBuffer, _transformUBO);
             GL.BufferSubData(BufferTarget.UniformBuffer, IntPtr.Zero, sizeof(float) * 16, ref _projectionMatrix);
             GL.BufferSubData(BufferTarget.UniformBuffer, new IntPtr(sizeof(float) * 16), sizeof(float) * 16, ref _viewMatrix);
-            GL.BufferSubData(BufferTarget.UniformBuffer, new IntPtr(sizeof(float) * 32), MAX_INSTANCES * sizeof(float) * 16, _worldMatrices);
+            GL.BufferSubData(BufferTarget.UniformBuffer, new IntPtr(sizeof(float) * 32), sizeof(float) * 16, ref _worldMatrix);
 
             // Draw multiple instances
-            GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, 3, MAX_INSTANCES);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
 
             SwapBuffers();
         }
