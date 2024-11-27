@@ -18,6 +18,9 @@ namespace ComputeTriangle
         private int _renderProgram;
         private int _vertexBuffer;
         private int _vertexArrayObject;
+        private int _transformUBO;
+        private Matrix4[] _worldMatrices;
+        private const int MAX_INSTANCES = 10;
 
         private readonly string _computeShaderSource = @"
             #version 430
@@ -60,11 +63,18 @@ namespace ComputeTriangle
             #version 430
             layout (location = 0) in vec2 aPosition;
             
+            layout(std140, binding = 1) uniform TransformUBO {
+                mat4 worldMatrices[10]; // Match MAX_INSTANCES
+            };
+            
             out vec2 FragPos;
+            flat out int instanceID;
             
             void main() {
-                FragPos = aPosition;
-                gl_Position = vec4(aPosition, 0.0, 1.0);
+                instanceID = gl_InstanceID;
+                vec4 worldPosition = worldMatrices[gl_InstanceID] * vec4(aPosition, 0.0, 1.0);
+                FragPos = aPosition; // Keep local coordinates for circle calculation
+                gl_Position = worldPosition;
             }
         ";
 
@@ -73,22 +83,25 @@ namespace ComputeTriangle
             out vec4 FragColor;
             
             in vec2 FragPos;
+            flat in int instanceID;
 
             void main() {
                 float size = 0.5;
                 float height = size * sqrt(3.0);
+                vec2 center = vec2(0.0, -height/6.0);
+                float radius = size / sqrt(3.0);
                 
-                // Calculate triangle center
-                vec2 center = vec2(0.0, -height/6.0); // center is 1/3 up from the base
-                
-                // Calculate radius (adjust this value to make circle bigger/smaller)
-                float radius = size / sqrt(3.0); // Increased radius
-                
-                // Check distance from center instead of origin
                 if (length(FragPos - center) <= radius) {
-                    FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red inside circle
+                    // Create different colors based on instanceID
+                    vec3 colors[3] = vec3[](
+                        vec3(1.0, 0.0, 0.0), // Red
+                        vec3(0.0, 1.0, 0.0), // Green
+                        vec3(0.0, 0.0, 1.0)  // Blue
+                    );
+                    vec3 color = colors[instanceID % 3];
+                    FragColor = vec4(color, 1.0);
                 } else {
-                    FragColor = vec4(0.0, 0.0, 1.0, 1.0); // Blue outside circle
+                    FragColor = vec4(0.2, 0.2, 0.2, 1.0);
                 }
             }
         ";
@@ -96,6 +109,19 @@ namespace ComputeTriangle
         public Game(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
             : base(gameWindowSettings, nativeWindowSettings)
         {
+            _worldMatrices = new Matrix4[MAX_INSTANCES];
+            InitializeWorldMatrices();
+        }
+
+        private void InitializeWorldMatrices()
+        {
+            // Initialize matrices for different positions
+            for (int i = 0; i < MAX_INSTANCES; i++)
+            {
+                float x = (i % 3) * 1.5f - 1.5f; // Arrange in a grid
+                float y = (i / 3) * 1.5f - 0.75f;
+                _worldMatrices[i] = Matrix4.CreateTranslation(x, y, 0);
+            }
         }
 
         protected override void OnLoad()
@@ -119,6 +145,12 @@ namespace ComputeTriangle
             GL.BufferData(BufferTarget.ShaderStorageBuffer, 3 * Marshal.SizeOf<Vertex>(), IntPtr.Zero, BufferUsageHint.StaticDraw);
             GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, _vertexBuffer);
 
+            // Create and initialize transform UBO
+            _transformUBO = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.UniformBuffer, _transformUBO);
+            GL.BufferData(BufferTarget.UniformBuffer, MAX_INSTANCES * sizeof(float) * 16, _worldMatrices, BufferUsageHint.DynamicDraw);
+            GL.BindBufferBase(BufferRangeTarget.UniformBuffer, 1, _transformUBO);
+
             // Set up VAO
             _vertexArrayObject = GL.GenVertexArray();
             GL.BindVertexArray(_vertexArrayObject);
@@ -139,7 +171,13 @@ namespace ComputeTriangle
             GL.Clear(ClearBufferMask.ColorBufferBit);
             GL.UseProgram(_renderProgram);
             GL.BindVertexArray(_vertexArrayObject);
-            GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+
+            // Update transform UBO with current matrices
+            GL.BindBuffer(BufferTarget.UniformBuffer, _transformUBO);
+            GL.BufferSubData(BufferTarget.UniformBuffer, IntPtr.Zero, MAX_INSTANCES * sizeof(float) * 16, _worldMatrices);
+
+            // Draw multiple instances
+            GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, 3, MAX_INSTANCES);
 
             SwapBuffers();
         }
@@ -206,6 +244,7 @@ namespace ComputeTriangle
             GL.DeleteProgram(_computeProgram);
             GL.DeleteProgram(_renderProgram);
             GL.DeleteBuffer(_vertexBuffer);
+            GL.DeleteBuffer(_transformUBO);
             GL.DeleteVertexArray(_vertexArrayObject);
             base.OnUnload();
         }
