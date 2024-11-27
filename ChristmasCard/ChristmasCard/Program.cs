@@ -21,6 +21,7 @@ namespace ComputeTriangle
         private int _transformUBO;
         private Matrix4[] _worldMatrices;
         private Matrix4 _viewMatrix;
+        private Matrix4 _projectionMatrix;
         private float _zoom = 1.0f;
         private const int MAX_INSTANCES = 10;
 
@@ -66,6 +67,7 @@ namespace ComputeTriangle
             layout (location = 0) in vec2 aPosition;
             
             layout(std140, binding = 1) uniform TransformUBO {
+                mat4 projectionMatrix;
                 mat4 viewMatrix;
                 mat4 worldMatrices[10]; // Match MAX_INSTANCES
             };
@@ -77,8 +79,9 @@ namespace ComputeTriangle
                 instanceID = gl_InstanceID;
                 vec4 worldPosition = worldMatrices[gl_InstanceID] * vec4(aPosition, 0.0, 1.0);
                 vec4 viewPosition = viewMatrix * worldPosition;
-                FragPos = aPosition; // Keep local coordinates for circle calculation
-                gl_Position = viewPosition;
+                vec4 clipPosition = projectionMatrix * viewPosition;
+                FragPos = aPosition;
+                gl_Position = clipPosition;
             }
         ";
 
@@ -115,6 +118,7 @@ namespace ComputeTriangle
         {
             _worldMatrices = new Matrix4[MAX_INSTANCES];
             _viewMatrix = Matrix4.Identity;
+            _projectionMatrix = Matrix4.Identity;
             InitializeWorldMatrices();
         }
 
@@ -142,11 +146,25 @@ namespace ComputeTriangle
             _viewMatrix = Matrix4.CreateScale(_zoom);
         }
 
+        private void UpdateProjectionMatrix()
+        {
+            float aspectRatio = (float)Size.X / Size.Y;
+            _projectionMatrix = Matrix4.CreateOrthographic(2f * aspectRatio, 2f, -1f, 1f);
+        }
+
+        protected override void OnResize(ResizeEventArgs e)
+        {
+            base.OnResize(e);
+            GL.Viewport(0, 0, Size.X, Size.Y);
+            UpdateProjectionMatrix();
+        }
+
         protected override void OnLoad()
         {
             base.OnLoad();
 
             GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+            UpdateProjectionMatrix();
 
             // Create compute shader
             _computeProgram = CreateShaderProgram(_computeShaderSource, ShaderType.ComputeShader);
@@ -166,7 +184,7 @@ namespace ComputeTriangle
             // Create and initialize transform UBO
             _transformUBO = GL.GenBuffer();
             GL.BindBuffer(BufferTarget.UniformBuffer, _transformUBO);
-            GL.BufferData(BufferTarget.UniformBuffer, (1 + MAX_INSTANCES) * sizeof(float) * 16, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+            GL.BufferData(BufferTarget.UniformBuffer, (2 + MAX_INSTANCES) * sizeof(float) * 16, IntPtr.Zero, BufferUsageHint.DynamicDraw);
             GL.BindBufferBase(BufferRangeTarget.UniformBuffer, 1, _transformUBO);
 
             // Set up VAO
@@ -192,8 +210,9 @@ namespace ComputeTriangle
 
             // Update transform UBO with current matrices
             GL.BindBuffer(BufferTarget.UniformBuffer, _transformUBO);
-            GL.BufferSubData(BufferTarget.UniformBuffer, IntPtr.Zero, sizeof(float) * 16, ref _viewMatrix);
-            GL.BufferSubData(BufferTarget.UniformBuffer, new IntPtr(sizeof(float) * 16), MAX_INSTANCES * sizeof(float) * 16, _worldMatrices);
+            GL.BufferSubData(BufferTarget.UniformBuffer, IntPtr.Zero, sizeof(float) * 16, ref _projectionMatrix);
+            GL.BufferSubData(BufferTarget.UniformBuffer, new IntPtr(sizeof(float) * 16), sizeof(float) * 16, ref _viewMatrix);
+            GL.BufferSubData(BufferTarget.UniformBuffer, new IntPtr(sizeof(float) * 32), MAX_INSTANCES * sizeof(float) * 16, _worldMatrices);
 
             // Draw multiple instances
             GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, 3, MAX_INSTANCES);
