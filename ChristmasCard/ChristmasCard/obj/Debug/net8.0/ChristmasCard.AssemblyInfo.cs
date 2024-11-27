@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ChristmasCard")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2841b3034a1e07a78992e1a34f8f75945b599cf6")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+351062d80d76a46ee03be6185c28c3c9c56f71b2")]
 [assembly: System.Reflection.AssemblyProductAttribute("ChristmasCard")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ChristmasCard")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

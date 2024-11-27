@@ -73,7 +73,7 @@ namespace ComputeTriangle
 
         private readonly string _vertexShaderSource = @"
             #version 430
-            
+    
             struct Particle {
                 vec2 Position;
                 vec2 Velocity;
@@ -84,40 +84,40 @@ namespace ComputeTriangle
             layout(std430, binding = 0) buffer ParticleBuffer {
                 Particle particles[];
             };
-            
+    
             layout(std140, binding = 1) uniform TransformUBO {
                 mat4 projectionMatrix;
                 mat4 viewMatrix;
                 mat4 worldMatrix;
             };
-            
+    
             out vec2 FragPos;
             out float ParticleLife;
-            
+    
             void main() {
                 // Generate triangle vertices based on particle position and size
                 Particle particle = particles[gl_InstanceID];
-                
-                float size = particle.Size;
+        
+                float size = particle.Size * 2.0; // Make the mesh larger to accommodate glow
                 float height = size * sqrt(3.0);
-                
+        
                 vec2 position;
                 switch (gl_VertexID) {
                     case 0:
-                        position = particle.Position + vec2(-size, -height/2);
+                        position = particle.Position + vec2(-size, -height/3); // Adjusted for better centering
                         break;
                     case 1:
-                        position = particle.Position + vec2(size, -height/2);
+                        position = particle.Position + vec2(size, -height/3);
                         break;
                     case 2:
-                        position = particle.Position + vec2(0, height/2);
+                        position = particle.Position + vec2(0, 2*height/3); // Adjusted for better centering
                         break;
                 }
-                
+        
                 vec4 worldPosition = worldMatrix * vec4(position, 0.0, 1.0);
                 vec4 viewPosition = viewMatrix * worldPosition;
                 vec4 clipPosition = projectionMatrix * viewPosition;
-                
+        
                 FragPos = position - particle.Position;
                 ParticleLife = particle.Life;
                 gl_Position = clipPosition;
@@ -127,16 +127,22 @@ namespace ComputeTriangle
         private readonly string _fragmentShaderSource = @"
             #version 430
             out vec4 FragColor;
-            
+    
             in vec2 FragPos;
             in float ParticleLife;
 
             void main() {
                 float radius = length(FragPos);
-                float alpha = smoothstep(0.1, 0.0, radius) * ParticleLife;
-                
+                float alpha = clamp(1.0 - (radius / (0.05)), 0.0, 1.0) * ParticleLife; // Smoother falloff, no discarding
+        
                 // Create a colorful particle effect
                 vec3 color = mix(vec3(1.0, 0.3, 0.0), vec3(1.0, 0.8, 0.0), ParticleLife);
+        
+                // Add extra glow in the center
+                if(radius < 0.05) {
+                    color = mix(vec3(1.0, 1.0, 1.0), color, radius / 0.025);
+                }
+        
                 FragColor = vec4(color, alpha);
             }
         ";
@@ -171,7 +177,7 @@ namespace ComputeTriangle
                     Position = _position,
                     Velocity = velocity,
                     Life = 1.0f,
-                    Size = 0.03f
+                    Size = 0.02f
                 });
             }
 
