@@ -73,7 +73,7 @@ namespace ComputeTriangle
 
         private readonly string _vertexShaderSource = @"
             #version 430
-    
+
             struct Particle {
                 vec2 Position;
                 vec2 Velocity;
@@ -84,42 +84,50 @@ namespace ComputeTriangle
             layout(std430, binding = 0) buffer ParticleBuffer {
                 Particle particles[];
             };
-    
+
             layout(std140, binding = 1) uniform TransformUBO {
                 mat4 projectionMatrix;
                 mat4 viewMatrix;
                 mat4 worldMatrix;
             };
-    
+
             out vec2 FragPos;
             out float ParticleLife;
-    
+            out float ParticleSize;
+
             void main() {
-                // Generate triangle vertices based on particle position and size
                 Particle particle = particles[gl_InstanceID];
-        
-                float size = particle.Size * 2.0; // Make the mesh larger to accommodate glow
+    
+                // Make the triangle larger to accommodate the glow
+                float size = particle.Size * 2.0; // Double the size to allow for glow
                 float height = size * sqrt(3.0);
-        
+    
+                // Generate triangle vertices with consistent size scaling
                 vec2 position;
+                vec2 localPos;
                 switch (gl_VertexID) {
                     case 0:
-                        position = particle.Position + vec2(-size, -height/3); // Adjusted for better centering
+                        localPos = vec2(-1.0, -1.0/sqrt(3.0));
+                        position = particle.Position + localPos * size;
                         break;
                     case 1:
-                        position = particle.Position + vec2(size, -height/3);
+                        localPos = vec2(1.0, -1.0/sqrt(3.0));
+                        position = particle.Position + localPos * size;
                         break;
                     case 2:
-                        position = particle.Position + vec2(0, 2*height/3); // Adjusted for better centering
+                        localPos = vec2(0.0, 2.0/sqrt(3.0));
+                        position = particle.Position + localPos * size;
                         break;
                 }
-        
+    
                 vec4 worldPosition = worldMatrix * vec4(position, 0.0, 1.0);
                 vec4 viewPosition = viewMatrix * worldPosition;
                 vec4 clipPosition = projectionMatrix * viewPosition;
-        
-                FragPos = position - particle.Position;
+    
+                // Pass the local position for glow calculation
+                FragPos = localPos;
                 ParticleLife = particle.Life;
+                ParticleSize = particle.Size;
                 gl_Position = clipPosition;
             }
         ";
@@ -127,22 +135,35 @@ namespace ComputeTriangle
         private readonly string _fragmentShaderSource = @"
             #version 430
             out vec4 FragColor;
-    
+
             in vec2 FragPos;
             in float ParticleLife;
+            in float ParticleSize;
 
             void main() {
                 float radius = length(FragPos);
-                float alpha = clamp(1.0 - (radius / (0.05)), 0.0, 1.0) * ParticleLife; // Smoother falloff, no discarding
-        
-                // Create a colorful particle effect
-                vec3 color = mix(vec3(1.0, 0.3, 0.0), vec3(1.0, 0.8, 0.0), ParticleLife);
-        
-                // Add extra glow in the center
-                if(radius < 0.05) {
-                    color = mix(vec3(1.0, 1.0, 1.0), color, radius / 0.025);
-                }
-        
+    
+                // Adjust the radius calculation to create a smoother falloff
+                float normalizedRadius = radius * 2; // Scale down the radius to make the glow extend further
+    
+                // Create a softer falloff for the glow
+                float alpha = clamp(1.0 - (normalizedRadius * normalizedRadius), 0.0, 1.0) * ParticleLife;
+    
+                // Create a colorful particle effect that scales with size
+                vec3 baseColor = mix(vec3(1.0, 0.3, 0.0), vec3(1.0, 0.8, 0.0), ParticleLife);
+    
+                // Enhanced glow effect with smoother falloff
+                float glowIntensity = exp(-normalizedRadius * 2.0); // Exponential falloff for more natural glow
+                vec3 color = mix(baseColor, vec3(1.0, 1.0, 1.0), glowIntensity * 0.5);
+    
+                // Adjust intensity based on particle size
+                float sizeCompensation = 1.0 / (ParticleSize * 20.0);
+                color *= (1.0 + sizeCompensation);
+    
+                // Additional intensity boost for the core
+                float coreGlow = exp(-radius * 8.0);
+                color += vec3(1.0, 1.0, 0.8) * coreGlow * ParticleLife;
+    
                 FragColor = vec4(color, alpha);
             }
         ";
@@ -166,7 +187,13 @@ namespace ComputeTriangle
             for (int i = 0; i < MAX_PARTICLES; i++)
             {
                 float angle = (float)(_random.NextDouble() * Math.PI * 2);
-                float speed = (float)(_random.NextDouble() * 0.5f + 0.5f);  // Slightly faster particles
+                float speed = (float)(_random.NextDouble() * 0.8f + 0.4f);
+
+                Vector2 offset = new Vector2(
+                    (float)(_random.NextDouble() - 0.5) * 0.1f,
+                    (float)(_random.NextDouble() - 0.5) * 0.1f
+                );
+
                 Vector2 velocity = new Vector2(
                     (float)Math.Cos(angle) * speed,
                     (float)Math.Sin(angle) * speed
@@ -174,14 +201,14 @@ namespace ComputeTriangle
 
                 _particles.Add(new Particle
                 {
-                    Position = _position,
+                    Position = _position + offset,
                     Velocity = velocity,
-                    Life = 1.0f,
-                    Size = 0.02f
+                    Life = 1.0f + (float)_random.NextDouble() * 0.5f,
+                    Size = 0.02f + (float)_random.NextDouble() * 0.01f
                 });
             }
 
-            Console.WriteLine($"Created {_particles.Count} particles"); // Debug print
+            Console.WriteLine($"Created {_particles.Count} particles");
             UpdateParticleBuffer();
         }
 
@@ -336,7 +363,7 @@ namespace ComputeTriangle
                     Position = _position,
                     Velocity = Vector2.Zero,
                     Life = 1.0f,
-                    Size = 0.1f
+                    Size = 0.05f
                 };
 
                 GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _particleBuffer);
