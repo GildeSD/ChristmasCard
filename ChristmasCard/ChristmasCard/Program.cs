@@ -98,34 +98,27 @@ namespace ComputeTriangle
 
             void main() {
                 Particle particle = particles[gl_InstanceID];
-    
-                // Make the triangle larger to accommodate the glow
                 float size = particle.Size * 2.0; // Double the size to allow for glow
-                float height = size * sqrt(3.0);
     
-                // Generate triangle vertices with consistent size scaling
-                vec2 position;
                 vec2 localPos;
-                switch (gl_VertexID) {
-                    case 0:
-                        localPos = vec2(-1.0, -1.0/sqrt(3.0));
-                        position = particle.Position + localPos * size;
-                        break;
-                    case 1:
-                        localPos = vec2(1.0, -1.0/sqrt(3.0));
-                        position = particle.Position + localPos * size;
-                        break;
-                    case 2:
-                        localPos = vec2(0.0, 2.0/sqrt(3.0));
-                        position = particle.Position + localPos * size;
-                        break;
+                vec2 position;
+    
+                if (gl_VertexID == 0) {
+                    localPos = vec2(-1.0, -1.0/sqrt(3.0));
                 }
+                else if (gl_VertexID == 1) {
+                    localPos = vec2(1.0, -1.0/sqrt(3.0));
+                }
+                else { // gl_VertexID == 2
+                    localPos = vec2(0.0, 2.0/sqrt(3.0));
+                }
+
+                position = particle.Position + localPos * size;
     
                 vec4 worldPosition = worldMatrix * vec4(position, 0.0, 1.0);
                 vec4 viewPosition = viewMatrix * worldPosition;
                 vec4 clipPosition = projectionMatrix * viewPosition;
     
-                // Pass the local position for glow calculation
                 FragPos = localPos;
                 ParticleLife = particle.Life;
                 ParticleSize = particle.Size;
