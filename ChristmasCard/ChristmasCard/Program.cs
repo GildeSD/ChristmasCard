@@ -3,7 +3,6 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using System.Runtime.InteropServices;
-using OpenTK.Windowing.Common.Input;
 
 namespace ComputeTriangle
 {
@@ -456,10 +455,16 @@ namespace ComputeTriangle
             int x = (monitor.HorizontalResolution - width) / 2;
             int y = (monitor.VerticalResolution - height) / 2;
 
+            var christmas = new DateTime(2024, 12, 25);
+            var today = DateTime.Now;
+            var daysUntilChristmas = (christmas - today).Days;
+
+            var title = $"Days until Christmas {daysUntilChristmas}";
+
             var nativeWindowSettings = new NativeWindowSettings()
             {
                 ClientSize = new Vector2i(width, height),
-                Title = "Kerstkaart 2024 - Harm Cox",
+                Title = title,
                 Flags = ContextFlags.ForwardCompatible,
                 APIVersion = new Version(4, 3),
                 Location = new Vector2i(x, y)
